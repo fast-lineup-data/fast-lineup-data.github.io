@@ -138,11 +138,13 @@
       <div class="card">
         <div class="stats">
           <div class="stat"><b id="bUnique">–</b><span>unique channels</span></div>
+          <div class="stat"><b id="bNational">–</b><span>national channels</span></div>
+          <div class="stat"><b id="bLocal">–</b><span>local city feeds</span></div>
           <div class="stat"><b id="bListings">–</b><span>total listings</span></div>
           <div class="stat"><b id="bPlatforms">–</b><span>platforms</span></div>
         </div>
         <div class="chart"><h3>Channels by platform</h3><div class="sub">Listings on each platform</div><div class="bars" id="chPlatform"></div></div>
-        <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Deduplicated across platforms · normalized categories</div><div class="bars" id="chGenre"></div></div>
+        <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Deduplicated across platforms · normalized categories · city feeds grouped as one bucket</div><div class="bars" id="chGenre"></div></div>
         <div class="chart"><h3>Unique channels by language</h3><div class="sub">Detected from platform data + channel names</div><div class="bars" id="chLang"></div></div>
         <div class="chart"><h3>Creator channels</h3><div class="sub">Digital-native / creator-led channels (beta — improving each month)</div><div class="bars" id="chCreator"></div></div>
       </div>
@@ -270,6 +272,8 @@ async function renderMonth(file){
   // Breakdown
   const a = m.aggregates || {};
   $("bUnique").textContent = nf(a.unique_total);
+  $("bNational").textContent = a.unique_national==null ? "–" : nf(a.unique_national);
+  $("bLocal").textContent = a.unique_local==null ? "–" : nf(a.unique_local);
   $("bListings").textContent = nf(a.total_listings);
   $("bPlatforms").textContent = Object.keys(a.by_platform||{}).length;
   bars($("chPlatform"), objToEntries(a.by_platform));
@@ -302,7 +306,13 @@ async function renderCompare(){
   };
 
   let html = `<p style="color:var(--muted);font-size:.9rem;margin:2px 0 14px">Change from <b>${la}</b> to <b>${lb}</b></p>`;
-  html += `<div class="stats">${tiles("unique channels", aa.unique_total, ab.unique_total)}${tiles("total listings", aa.total_listings, ab.total_listings)}</div>`;
+  let tileHtml = tiles("unique channels", aa.unique_total, ab.unique_total)
+               + tiles("total listings", aa.total_listings, ab.total_listings);
+  if(aa.unique_national!=null && ab.unique_national!=null){
+    tileHtml += tiles("national channels", aa.unique_national, ab.unique_national)
+              + tiles("local city feeds", aa.unique_local, ab.unique_local);
+  }
+  html += `<div class="stats">${tileHtml}</div>`;
   const crLabel = o => ({"Creator-led":(o&&o.creator)||0, "Other":(o&&o.other)||0});
   html += deltaSection("By platform", aa.by_platform, ab.by_platform);
   html += deltaSection("By genre (unique channels)", aa.by_genre, ab.by_genre);
