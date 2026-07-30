@@ -144,7 +144,7 @@
           <div class="stat"><b id="bPlatforms">–</b><span>platforms</span></div>
         </div>
         <div class="chart"><h3>Channels by platform</h3><div class="sub">Listings on each platform</div><div class="bars" id="chPlatform"></div></div>
-        <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Deduplicated across platforms · normalized categories · city feeds grouped as one bucket</div><div class="bars" id="chGenre"></div></div>
+        <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Amagi genre taxonomy · deduplicated across platforms · city feeds grouped as one bucket</div><div class="bars" id="chGenre"></div></div>
         <div class="chart"><h3>Unique channels by language</h3><div class="sub">Detected from platform data + channel names</div><div class="bars" id="chLang"></div></div>
         <div class="chart"><h3>Creator channels</h3><div class="sub">Digital-native / creator-led channels (beta — improving each month)</div><div class="bars" id="chCreator"></div></div>
       </div>
@@ -277,7 +277,7 @@ async function renderMonth(file){
   $("bListings").textContent = nf(a.total_listings);
   $("bPlatforms").textContent = Object.keys(a.by_platform||{}).length;
   bars($("chPlatform"), objToEntries(a.by_platform));
-  bars($("chGenre"), objToEntries(a.by_genre), {top:12});
+  bars($("chGenre"), objToEntries(a.by_amagi_genre || a.by_genre), {top:12});
   bars($("chLang"), objToEntries(a.by_language), {top:8});
   const cr = a.creator || {creator:0, other:0};
   bars($("chCreator"), [{label:"Creator-led", value:cr.creator||0},{label:"Other", value:cr.other||0}]);
@@ -315,7 +315,7 @@ async function renderCompare(){
   html += `<div class="stats">${tileHtml}</div>`;
   const crLabel = o => ({"Creator-led":(o&&o.creator)||0, "Other":(o&&o.other)||0});
   html += deltaSection("By platform", aa.by_platform, ab.by_platform);
-  html += deltaSection("By genre (unique channels)", aa.by_genre, ab.by_genre);
+  html += deltaSection("By genre (unique channels)", aa.by_amagi_genre || aa.by_genre, ab.by_amagi_genre || ab.by_genre);
   html += deltaSection("By language (unique channels)", aa.by_language, ab.by_language);
   html += deltaSection("Creator channels (unique)", crLabel(aa.creator), crLabel(ab.creator));
   body.innerHTML = html;
