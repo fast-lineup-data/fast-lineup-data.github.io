@@ -107,6 +107,13 @@
   .pill-xumo{background:#fdf2e0;color:#8a6100;} .pill-blbg{background:#e6f6fb;color:#0f6a86;}
   .pill-unk{background:#eef1f5;color:#8a97a5;}
   .cx-hint,.cx-more{color:var(--muted);font-size:.78rem;margin-top:12px;}
+  .cx-pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin-top:16px;}
+  .cx-pg{background:#fff;border:1px solid #cfd8e3;color:var(--navy);border-radius:8px;
+        padding:6px 11px;font-size:.85rem;font-weight:600;cursor:pointer;min-width:34px;}
+  .cx-pg:hover:not(:disabled){background:#eef4fb;}
+  .cx-pg.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .cx-pg:disabled{opacity:.45;cursor:default;}
+  .cx-pg-gap{color:var(--muted);padding:0 3px;}
   .scrim{position:fixed;inset:0;background:rgba(16,32,54,.44);display:none;
         align-items:flex-start;justify-content:center;padding:56px 14px;z-index:50;}
   .scrim.on{display:flex;}
@@ -219,7 +226,8 @@
             <tbody id="cxBody"></tbody>
           </table>
         </div>
-        <div class="cx-hint">Click any channel for its full platform profile. <b>Provider</b> is the delivery / technology provider that carries the channel (Amagi, Frequency, Wurl, …); it shows “Unknown” where no source identifies it.</div>
+        <div class="cx-pager" id="cxPager"></div>
+        <div class="cx-hint">Showing 20 channels per page — search and filters apply across the whole catalogue. Click any channel for its full platform profile. <b>Provider</b> is the delivery / technology provider that carries the channel (Amagi, Frequency, Wurl, …); it shows “Unknown” where no source identifies it.</div>
       </div>
     </div>
 
@@ -332,7 +340,8 @@ function objToEntries(obj){
 // ── channel explorer ─────────────────────────────────────────────────────────
 let CXA = null;        // current month's aggregates
 let CXPLATS = [];      // platform_list (index order)
-const CX_CAP = 500;    // max rows rendered at once (perf)
+const CX_PER = 20;     // rows per page
+let CX_PAGE = 1;       // current page (filters/search span the full dataset)
 
 function cxFill(sel, items, allLabel){
   const cur = sel.value;
@@ -348,25 +357,38 @@ function cxSetup(a){
   cxFill($("cxGenre"), genres, "All genres");
   cxFill($("cxProvider"), provs, "All providers");
   cxFill($("cxPlat"), CXPLATS, "Any platform");
+  CX_PAGE = 1;
   cxRender();
 }
 
-function cxRender(){
+// Filter + search across the ENTIRE dataset (not just the current page).
+function cxCurrentRows(){
   const chans = (CXA && CXA.channels) || [];
-  if(!$("cxBody")) return;
   const q = $("cxq").value.trim().toLowerCase();
   const g = $("cxGenre").value, pv = $("cxProvider").value, pf = $("cxPlat").value;
   const pfIdx = pf ? CXPLATS.indexOf(pf) : -1;
-  const rows = chans.filter(c =>
+  return chans.filter(c =>
     (!q || c.n.toLowerCase().includes(q)) &&
     (!g || c.g === g) &&
     (!pv || c.p === pv) &&
     (pfIdx < 0 || c.pl.includes(pfIdx))
   ).sort((a,b)=>a.n.localeCompare(b.n));
-  $("cxCount").textContent = nf(rows.length) + (rows.length===1?" channel":" channels");
-  const shown = rows.slice(0, CX_CAP);
+}
+
+function cxRender(){
+  if(!$("cxBody")) return;
+  const rows = cxCurrentRows();
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / CX_PER));
+  if(CX_PAGE > pages) CX_PAGE = pages;
+  if(CX_PAGE < 1) CX_PAGE = 1;
+  const start = (CX_PAGE - 1) * CX_PER;
+  const pageRows = rows.slice(start, start + CX_PER);
+  $("cxCount").textContent = total
+    ? `${nf(total)} channel${total!==1?'s':''} · showing ${nf(start+1)}–${nf(start+pageRows.length)}`
+    : "no channels match";
   const body = $("cxBody");
-  body.innerHTML = shown.map(c => {
+  body.innerHTML = pageRows.map(c => {
     const onSet = new Set(c.pl);
     const on = c.pl.map(i=>CXPLATS[i]);
     const off = CXPLATS.filter((p,i)=>!onSet.has(i));
@@ -379,11 +401,31 @@ function cxRender(){
       <td><div class="chips">${on.map(p=>cxchip(p,true)).join("")}</div></td>
       <td><div class="chips">${off.length?off.map(p=>cxchip(p,false)).join(""):'<span class="muted">—</span>'}</div></td>
     </tr>`;
-  }).join("");
-  if(rows.length > CX_CAP){
-    body.innerHTML += `<tr><td colspan="7" class="cx-more">Showing the first ${nf(CX_CAP)} of ${nf(rows.length)} — refine your search to narrow the list.</td></tr>`;
-  }
+  }).join("") || `<tr><td colspan="7" class="cx-more">No channels match your filters.</td></tr>`;
   body.querySelectorAll("tr[data-n]").forEach(tr => tr.onclick = () => cxDetail(tr.dataset.n));
+  cxPager(pages);
+}
+
+function cxGoto(p){ CX_PAGE = p; cxRender(); window.scrollTo({top:0, behavior:"smooth"}); }
+
+function cxPager(pages){
+  const el = $("cxPager"); if(!el) return;
+  if(pages <= 1){ el.innerHTML = ""; return; }
+  const p = CX_PAGE;
+  const btn = (label, page, o={}) =>
+    `<button class="cx-pg${o.active?' active':''}"${o.disabled?' disabled':''} data-pg="${page}">${label}</button>`;
+  const nums = [...new Set([1, pages, p, p-1, p+1, p-2, p+2])]
+    .filter(n => n>=1 && n<=pages).sort((a,b)=>a-b);
+  let html = btn('‹ Prev', p-1, {disabled: p<=1});
+  let prev = 0;
+  for(const n of nums){
+    if(n - prev > 1) html += `<span class="cx-pg-gap">…</span>`;
+    html += btn(nf(n), n, {active: n===p});
+    prev = n;
+  }
+  html += btn('Next ›', p+1, {disabled: p>=pages});
+  el.innerHTML = html;
+  el.querySelectorAll('.cx-pg').forEach(b => b.onclick = () => { if(!b.disabled) cxGoto(+b.dataset.pg); });
 }
 
 function cxDetail(name){
@@ -526,8 +568,8 @@ document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () =>
   if(t.dataset.tab === "channels") cxRender();
 }));
 
-// channel-explorer filters + modal
-["cxq","cxGenre","cxProvider","cxPlat"].forEach(id => $(id).addEventListener("input", cxRender));
+// channel-explorer filters + modal — any filter/search change resets to page 1
+["cxq","cxGenre","cxProvider","cxPlat"].forEach(id => $(id).addEventListener("input", () => { CX_PAGE = 1; cxRender(); }));
 $("cxScrim").addEventListener("click", e => { if(e.target === $("cxScrim")) cxClose(); });
 document.addEventListener("keydown", e => { if(e.key === "Escape") cxClose(); });
 
