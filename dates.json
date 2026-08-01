@@ -1,5 +1,10 @@
 [
   {
+    "month": "2026-08",
+    "label": "August 2026",
+    "file": "snapshots/2026-08.json"
+  },
+  {
     "month": "2026-07",
     "label": "July 2026",
     "file": "snapshots/2026-07.json"
