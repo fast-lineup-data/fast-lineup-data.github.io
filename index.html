@@ -72,14 +72,14 @@
   .btrack{background:var(--track);border-radius:5px;height:18px;position:relative;overflow:hidden;}
   .bfill{background:var(--series);height:100%;border-radius:5px;min-width:2px;transition:width .5s ease;}
   .bval{font-size:.84rem;color:#334155;font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
-  .cmp-head{display:grid;grid-template-columns:150px 1fr auto;gap:10px;font-size:.75rem;
+  .cmp-head{display:grid;grid-template-columns:150px 1fr;gap:10px;font-size:.75rem;
             color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
-  .crow{display:grid;grid-template-columns:150px 1fr auto;align-items:center;gap:10px;margin-bottom:9px;}
-  .cbarwrap{display:flex;align-items:center;height:18px;}
-  .cbar{height:100%;border-radius:5px;min-width:2px;}
+  .crow{display:grid;grid-template-columns:150px 1fr;align-items:center;gap:10px;margin-bottom:9px;}
+  .cbarwrap{display:flex;align-items:center;gap:8px;height:18px;}
+  .cbar{height:100%;border-radius:5px;min-width:2px;flex:none;}
   .cbar.up{background:var(--up);} .cbar.down{background:var(--down);}
-  .cdelta{font-size:.86rem;font-weight:700;font-variant-numeric:tabular-nums;min-width:70px;text-align:right;}
-  .cdelta.up{color:var(--up);} .cdelta.down{color:var(--down);} .cdelta.flat{color:var(--muted);}
+  .cbarval{font-size:.84rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .cbarval.up{color:var(--up);} .cbarval.down{color:var(--down);} .cbarval.flat{color:var(--muted);}
   .note{background:#fff8e6;border:1px solid #f4e2b0;color:#7a5b00;border-radius:8px;
         padding:10px 12px;font-size:.86rem;margin-top:14px;}
   /* Channel Explorer */
@@ -537,17 +537,17 @@ function deltaSection(title, a, b){
                    .sort((x,y)=>Math.abs(y.d)-Math.abs(x.d) || y.to-x.to);
   const maxAbs = Math.max(1, ...rows.map(r=>Math.abs(r.d)));
   let out = `<div class="chart"><h3>${title}</h3>`
-          + `<div class="cmp-head"><div style="text-align:right">Category</div><div>Movement</div><div style="text-align:right">Change</div></div>`;
+          + `<div class="cmp-head"><div style="text-align:right">Category</div><div>Movement · change</div></div>`;
   out += rows.map(r => {
     const cls = r.d>0?"up":(r.d<0?"down":"flat");
-    const w = Math.round(Math.abs(r.d)/maxAbs*100);
+    const w = r.d===0 ? 0 : Math.max(3, Math.round(Math.abs(r.d)/maxAbs*80));  // cap so the label always fits
     const arrow = r.d>0?"▲ +":(r.d<0?"▼ −":"");
-    const barhtml = r.d===0 ? "" : `<div class="cbar ${cls}" style="width:${Math.max(2,w)}%"></div>`;
+    const valTxt = r.d===0 ? "no change" : arrow+nf(Math.abs(r.d));
+    const barhtml = r.d===0 ? "" : `<div class="cbar ${cls}" style="width:${w}%"></div>`;
     const lab = String(r.label).replace(/</g,"&lt;");
     return `<div class="crow" title="${lab}: ${nf(r.from)} → ${nf(r.to)}">`
          + `<div class="blab">${lab}</div>`
-         + `<div class="cbarwrap">${barhtml}</div>`
-         + `<div class="cdelta ${cls}">${r.d===0?"—":arrow+nf(Math.abs(r.d))}</div></div>`;
+         + `<div class="cbarwrap">${barhtml}<span class="cbarval ${cls}">${valTxt}</span></div></div>`;
   }).join("");
   return out + "</div>";
 }
