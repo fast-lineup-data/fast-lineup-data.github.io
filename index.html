@@ -133,7 +133,9 @@
   .pcell.on .dot{background:var(--series);}
   .pcell .pn{font-weight:600;font-size:.82rem;}
   .pcell .st{margin-left:auto;font-size:.72rem;font-weight:700;}
-  .pcell.on .st{color:var(--ok);} .pcell.off .st{color:var(--muted);}
+  .pcell.on .st{color:#245a92;} .pcell.off .st{color:var(--muted);}
+  .cx-note{background:#eef4fb;border:1px solid #d3e3f5;color:#33506f;border-radius:8px;
+        padding:8px 11px;font-size:.76rem;margin:2px 0 12px;}
   @media(max-width:560px){.cx-grid{grid-template-columns:repeat(2,1fr);}}
   footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px;}
 </style>
@@ -200,7 +202,7 @@
         </div>
         <div class="chart"><h3>Channels by platform</h3><div class="sub">Listings on each platform</div><div class="bars" id="chPlatform"></div></div>
         <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Amagi genre taxonomy · deduplicated across platforms · city feeds grouped as one bucket</div><div class="bars" id="chGenre"></div></div>
-        <div class="chart"><h3>Unique channels by tech provider</h3><div class="sub">Delivery / technology provider · Amagi feed IDs + LG providerId · “Unknown” where no source identifies it</div><div class="bars" id="chProvider"></div></div>
+        <div class="chart"><h3>Deliveries by tech provider</h3><div class="sub">Counted per channel–platform delivery (not unique channels) · Amagi feed IDs + LG providerId · “Unknown” where no source identifies it</div><div class="bars" id="chProvider"></div></div>
         <div class="chart"><h3>Unique channels by language</h3><div class="sub">Detected from platform data + channel names</div><div class="bars" id="chLang"></div></div>
         <div class="chart"><h3>Creator channels</h3><div class="sub">Digital-native / creator-led channels (beta — improving each month)</div><div class="bars" id="chCreator"></div></div>
       </div>
@@ -227,7 +229,7 @@
           </table>
         </div>
         <div class="cx-pager" id="cxPager"></div>
-        <div class="cx-hint">Showing 20 channels per page — search and filters apply across the whole catalogue. Click any channel for its full platform profile. <b>Provider</b> is the delivery / technology provider that carries the channel (Amagi, Frequency, Wurl, …); it shows “Unknown” where no source identifies it.</div>
+        <div class="cx-hint">Showing 20 channels per page — search and filters apply across the whole catalogue. Click any channel to see its provider <b>per platform</b>. The <b>Provider</b> column lists the distinct providers across a channel’s platforms (a channel can be delivered by different providers on different platforms); “Unknown” means no source identifies that delivery.</div>
       </div>
     </div>
 
@@ -256,6 +258,9 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':
 const _SHORT = {"Pluto TV":"Pluto","Samsung TV Plus":"Samsung","Xumo Play":"Xumo","Local Now":"Local Now","LG Channels":"LG","Vizio WatchFree+":"Vizio","Plex":"Plex","The Roku Channel":"Roku","Tubi":"Tubi"};
 const shortPlat = p => _SHORT[p] || p;
 const provClass = p => ({Amagi:'amagi',Frequency:'freq',Wurl:'wurl',Pluto:'pluto',Xumo:'xumo',Bloomberg:'blbg'}[p] || 'unk');
+const PROV_ORDER = ["Amagi","Frequency","Wurl","Pluto","Xumo","Bloomberg","Unknown"];
+const distinctProv = pv => { const s=[...new Set(pv||[])]; return PROV_ORDER.filter(p=>s.includes(p)).concat(s.filter(p=>!PROV_ORDER.includes(p))); };
+const provPill = p => `<span class="pill pill-${provClass(p)}">${esc(p)}</span>`;
 const cxchip = (full,on) => `<span class="cxchip ${on?'on':'off'}" title="${esc(full)}">${esc(shortPlat(full))}</span>`;
 
 async function deriveKey(password, saltB64, iterations){
@@ -370,7 +375,7 @@ function cxCurrentRows(){
   return chans.filter(c =>
     (!q || c.n.toLowerCase().includes(q)) &&
     (!g || c.g === g) &&
-    (!pv || c.p === pv) &&
+    (!pv || (c.pv||[]).includes(pv)) &&
     (pfIdx < 0 || c.pl.includes(pfIdx))
   ).sort((a,b)=>a.n.localeCompare(b.n));
 }
@@ -395,7 +400,7 @@ function cxRender(){
     return `<tr data-n="${esc(c.n)}">
       <td class="cx-name">${esc(c.n)}</td>
       <td><span class="gbadge">${esc(c.g)}</span></td>
-      <td><span class="pill pill-${provClass(c.p)}">${esc(c.p)}</span></td>
+      <td><div class="chips">${distinctProv(c.pv).map(provPill).join("")}</div></td>
       <td class="muted">${esc(c.l)}</td>
       <td class="num">${on.length}</td>
       <td><div class="chips">${on.map(p=>cxchip(p,true)).join("")}</div></td>
@@ -431,17 +436,20 @@ function cxPager(pages){
 function cxDetail(name){
   const c = ((CXA && CXA.channels) || []).find(x => x.n === name);
   if(!c) return;
-  const onSet = new Set(c.pl);
+  const pmap = {};                        // platform index -> provider for this channel
+  c.pl.forEach((idx,k) => pmap[idx] = (c.pv||[])[k] || "Unknown");
   const grid = CXPLATS.map((p,idx)=>{
-    const on = onSet.has(idx);
-    return `<div class="pcell ${on?'on':'off'}"><span class="dot"></span><span class="pn">${esc(p)}</span><span class="st">${on?'On':'Not on'}</span></div>`;
+    const on = idx in pmap;
+    const st = on ? esc(pmap[idx]) : "Not on";      // On cells show WHO delivers it
+    return `<div class="pcell ${on?'on':'off'}"><span class="dot"></span><span class="pn">${esc(p)}</span><span class="st">${st}</span></div>`;
   }).join("");
   $("cxModal").innerHTML =
     `<div class="cx-dhead"><h3>${esc(c.n)}</h3><span class="gbadge">${esc(c.g)}</span>`
-    + `<span class="pill pill-${provClass(c.p)}">${esc(c.p)}</span>`
+    + `<div class="chips">${distinctProv(c.pv).map(provPill).join("")}</div>`
     + `<button class="cx-x" onclick="cxClose()" aria-label="Close">✕</button></div>`
     + `<div class="cx-kv"><span>Sub-genre <b>${esc(c.s)}</b></span><span>Language <b>${esc(c.l)}</b></span>`
-    + `<span>Provider <b>${esc(c.p)}</b></span><span>On <b>${c.pl.length} of ${CXPLATS.length}</b> platforms</span></div>`
+    + `<span>On <b>${c.pl.length} of ${CXPLATS.length}</b> platforms</span></div>`
+    + `<div class="cx-note">Provider shown per platform below — the same channel can be delivered by different providers on different platforms.</div>`
     + `<div class="cx-grid">${grid}</div>`;
   $("cxScrim").classList.add("on");
 }
@@ -515,7 +523,7 @@ async function renderCompare(){
   const crLabel = o => ({"Creator-led":(o&&o.creator)||0, "Other":(o&&o.other)||0});
   html += deltaSection("By platform", aa.by_platform, ab.by_platform);
   html += deltaSection("By genre (unique channels)", aa.by_amagi_genre || aa.by_genre, ab.by_amagi_genre || ab.by_genre);
-  html += deltaSection("By tech provider (unique channels)", aa.by_provider, ab.by_provider);
+  html += deltaSection("By tech provider (deliveries)", aa.by_provider, ab.by_provider);
   html += deltaSection("By language (unique channels)", aa.by_language, ab.by_language);
   html += deltaSection("Creator channels (unique)", crLabel(aa.creator), crLabel(ab.creator));
   body.innerHTML = html;
