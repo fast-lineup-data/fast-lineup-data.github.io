@@ -13,6 +13,11 @@
     --navy:#1F4E79; --navy-dark:#16395a; --bg:#F0F2F5; --card:#ffffff;
     --ok:#2e7d32; --err:#c62828; --muted:#667085; --line:#eef2f6;
     --series:#2a78d6; --track:#eaf1fb; --up:#00791f; --down:#d03b3b;
+    /* sequential ramp for the reach matrix — one hue, monotone lightness.
+       The lightest step deliberately recedes toward the surface ("near zero");
+       every cell prints its number, which is the relief channel. */
+    --sq0:#f4f8fe; --sq1:#cde2fb; --sq2:#9ec5f4; --sq3:#6da7ec;
+    --sq4:#3987e5; --sq5:#256abf; --sq6:#184f95; --sq7:#0d366b;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
@@ -82,6 +87,23 @@
   .cbarval.up{color:var(--up);} .cbarval.down{color:var(--down);} .cbarval.flat{color:var(--muted);}
   .note{background:#fff8e6;border:1px solid #f4e2b0;color:#7a5b00;border-radius:8px;
         padding:10px 12px;font-size:.86rem;margin-top:14px;}
+  /* Genre × reach matrix */
+  .rmx-legend{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--muted);margin-bottom:9px;}
+  .rsw{width:13px;height:13px;border-radius:3px;display:inline-block;}
+  .rmx-scroll{overflow-x:auto;}
+  table.rmx{border-collapse:separate;border-spacing:2px;width:100%;margin-top:0;}
+  .rmx th{font-size:.68rem;color:var(--muted);font-weight:700;padding:3px 2px;text-align:center;
+        text-transform:none;letter-spacing:0;border:0;}
+  .rmx th.rowh{text-align:right;padding-right:8px;color:#334155;font-size:.78rem;white-space:nowrap;cursor:pointer;}
+  .rmx th.rowh:hover{color:var(--navy);text-decoration:underline;}
+  .rmx td{text-align:center;font-size:.74rem;font-variant-numeric:tabular-nums;padding:6px 2px;
+        border:0;border-radius:4px;color:#12314e;}
+  .rmx td.hit{cursor:pointer;}
+  .rmx td.hit:hover{outline:2px solid var(--navy);outline-offset:-1px;}
+  .rmx td.z{color:#c9d2dc;}
+  .rmx td.dk{color:#fff;}
+  .rmx td.tot{background:#f4f7fb;font-weight:700;color:#1a4a7a;}
+  .rmx tr:hover th.rowh{color:var(--navy);}
   /* Channel Explorer */
   .cx-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;}
   .cx-controls input[type=text]{flex:1 1 220px;min-width:170px;padding:9px 12px;
@@ -202,6 +224,17 @@
         </div>
         <div class="chart"><h3>Channels by platform</h3><div class="sub">Listings on each platform</div><div class="bars" id="chPlatform"></div></div>
         <div class="chart"><h3>Unique channels by genre</h3><div class="sub">Amagi genre taxonomy · deduplicated across platforms · city feeds grouped as one bucket</div><div class="bars" id="chGenre"></div></div>
+        <div class="chart" id="reachWrap">
+          <h3>Genre × platform reach</h3>
+          <div class="sub">Unique channels by Amagi genre and how many platforms they’re on · <b>click any cell</b> to see those channels and their platforms</div>
+          <div class="rmx-legend">
+            <span>Channels per cell</span>
+            <span class="rsw" style="background:var(--sq1)"></span>few
+            <span class="rsw" style="background:var(--sq4)"></span>
+            <span class="rsw" style="background:var(--sq7)"></span>many
+          </div>
+          <div class="rmx-scroll"><table class="rmx" id="reachMatrix"></table></div>
+        </div>
         <div class="chart"><h3>Deliveries by tech provider</h3><div class="sub">Counted per channel–platform delivery (not unique channels) · Amagi feed IDs + LG providerId · “Unknown” where no source identifies it</div><div class="bars" id="chProvider"></div></div>
         <div class="chart"><h3>Unique channels by language</h3><div class="sub">Detected from platform data + channel names</div><div class="bars" id="chLang"></div></div>
         <div class="chart"><h3>Creator channels</h3><div class="sub">Digital-native / creator-led channels (beta — improving each month)</div><div class="bars" id="chCreator"></div></div>
@@ -216,6 +249,7 @@
           <select id="cxGenre"><option value="">All genres</option></select>
           <select id="cxProvider"><option value="">All providers</option></select>
           <select id="cxPlat"><option value="">Any platform</option></select>
+          <select id="cxReach"><option value="">Any # platforms</option></select>
           <span class="stamp" id="cxCount" style="margin-left:auto"></span>
         </div>
         <div class="cx-tablewrap">
@@ -255,6 +289,7 @@ const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const $ = id => document.getElementById(id);
 const nf = n => (n||0).toLocaleString();
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const tot = arr => (arr||[]).reduce((s,v)=>s+v, 0);
 const _SHORT = {"Pluto TV":"Pluto","Samsung TV Plus":"Samsung","Xumo Play":"Xumo","Local Now":"Local Now","LG Channels":"LG","Vizio WatchFree+":"Vizio","Plex":"Plex","The Roku Channel":"Roku","Tubi":"Tubi"};
 const shortPlat = p => _SHORT[p] || p;
 const provClass = p => ({Amagi:'amagi',Frequency:'freq',Wurl:'wurl',Pluto:'pluto',Xumo:'xumo',Bloomberg:'blbg'}[p] || 'unk');
@@ -342,6 +377,61 @@ function objToEntries(obj){
   return Object.entries(obj||{}).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
 }
 
+// ── genre × platform-reach matrix ────────────────────────────────────────────
+// Derived entirely from the per-channel records already in the snapshot:
+// genre = c.g, reach = c.pl.length. Cells are clickable and jump to Channels.
+function renderReachMatrix(a){
+  const wrap = $("reachWrap"); if(!wrap) return;
+  const chans = a.channels || [], N = (a.platform_list || []).length;
+  if(!chans.length || !N){ wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  const rows = {};
+  for(const c of chans){
+    const r = Math.min((c.pl || []).length, N);
+    if(r < 1) continue;
+    const g = c.g || "Unclassified";
+    (rows[g] = rows[g] || new Array(N).fill(0))[r-1]++;
+  }
+  const genres = Object.keys(rows).sort((x,y)=>tot(rows[y])-tot(rows[x]));
+  const maxCell = Math.max(1, ...genres.flatMap(g=>rows[g]));
+  const STEPS = ["--sq0","--sq1","--sq2","--sq3","--sq4","--sq5","--sq6","--sq7"];
+  const shade = v => {
+    if(!v) return {c:"var(--sq0)", dk:false};
+    // sqrt so mid-range cells stay visible against the long tail
+    const i = Math.min(STEPS.length-1, Math.max(1, Math.round(Math.sqrt(v/maxCell)*(STEPS.length-1))));
+    return {c:`var(${STEPS[i]})`, dk:i>=5};
+  };
+  let h = `<thead><tr><th class="rowh" style="cursor:default">Genre</th>`
+        + Array.from({length:N},(_,i)=>`<th title="On exactly ${i+1} platform${i?'s':''}">${i+1}</th>`).join("")
+        + `<th style="padding-left:6px">Total</th><th>Avg</th></tr></thead><tbody>`;
+  for(const g of genres){
+    const arr = rows[g], t = tot(arr);
+    const avg = (arr.reduce((s,c,i)=>s+(i+1)*c, 0) / t).toFixed(2);
+    h += `<tr><th class="rowh" data-g="${esc(g)}" data-r="" title="Show all ${nf(t)} ${esc(g)} channels">${esc(g)}</th>`
+       + arr.map((v,i)=>{
+           const s = shade(v);
+           if(!v) return `<td class="z" style="background:${s.c}">·</td>`;
+           return `<td class="hit${s.dk?' dk':''}" style="background:${s.c}" data-g="${esc(g)}" data-r="${i+1}"`
+                + ` title="${esc(g)} on exactly ${i+1} platform${i?'s':''} — ${nf(v)} channel${v===1?'':'s'} · click to view">${nf(v)}</td>`;
+         }).join("")
+       + `<td class="tot hit" style="padding-left:6px" data-g="${esc(g)}" data-r="" title="All ${esc(g)} channels">${nf(t)}</td>`
+       + `<td class="tot">${avg}</td></tr>`;
+  }
+  const colTot = Array.from({length:N},(_,i)=>genres.reduce((s,g)=>s+rows[g][i], 0));
+  const grand = tot(colTot);
+  h += `<tr><th class="rowh" style="color:var(--muted);font-size:.7rem;cursor:default">All genres</th>`
+     + colTot.map((v,i)=> v
+         ? `<td class="tot hit" data-g="" data-r="${i+1}" title="Every channel on exactly ${i+1} platform${i?'s':''} — ${nf(v)} channel${v===1?'':'s'} · click to view">${nf(v)}</td>`
+         : `<td class="tot" style="color:#c9d2dc">0</td>`).join("")
+     + `<td class="tot" style="padding-left:6px">${nf(grand)}</td>`
+     + `<td class="tot">${(colTot.reduce((s,v,i)=>s+(i+1)*v,0)/grand).toFixed(2)}</td></tr></tbody>`;
+  $("reachMatrix").innerHTML = h;
+  $("reachMatrix").querySelectorAll("[data-g]").forEach(el=>{
+    if(el.classList.contains("hit") || el.classList.contains("rowh"))
+      el.onclick = () => cxJump(el.dataset.g, el.dataset.r);
+  });
+}
+
 // ── channel explorer ─────────────────────────────────────────────────────────
 let CXA = null;        // current month's aggregates
 let CXPLATS = [];      // platform_list (index order)
@@ -362,8 +452,27 @@ function cxSetup(a){
   cxFill($("cxGenre"), genres, "All genres");
   cxFill($("cxProvider"), provs, "All providers");
   cxFill($("cxPlat"), CXPLATS, "Any platform");
+  // "# platforms" (reach) — keeps values as plain numbers so the matrix can set it
+  const rsel = $("cxReach"), rcur = rsel.value;
+  rsel.innerHTML = `<option value="">Any # platforms</option>`
+    + CXPLATS.map((_,i)=>`<option value="${i+1}">On ${i+1} platform${i?'s':''}</option>`).join("");
+  if(rcur) rsel.value = rcur;
   CX_PAGE = 1;
   cxRender();
+}
+
+// Jump from the reach matrix into the Channels tab, pre-filtered.
+function cxJump(genre, reach){
+  document.querySelector('.tab[data-tab="channels"]').click();   // switches tab + widens
+  $("cxq").value = "";
+  $("cxProvider").value = "";
+  $("cxPlat").value = "";
+  $("cxGenre").value = genre || "";
+  $("cxReach").value = reach || "";
+  CX_PAGE = 1;
+  cxRender();
+  const card = $("panel-channels").querySelector(".card");
+  if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 // Filter + search across the ENTIRE dataset (not just the current page).
@@ -371,11 +480,13 @@ function cxCurrentRows(){
   const chans = (CXA && CXA.channels) || [];
   const q = $("cxq").value.trim().toLowerCase();
   const g = $("cxGenre").value, pv = $("cxProvider").value, pf = $("cxPlat").value;
+  const rc = +($("cxReach").value || 0);
   const pfIdx = pf ? CXPLATS.indexOf(pf) : -1;
   return chans.filter(c =>
     (!q || c.n.toLowerCase().includes(q)) &&
     (!g || c.g === g) &&
     (!pv || (c.pv||[]).includes(pv)) &&
+    (!rc || c.pl.length === rc) &&
     (pfIdx < 0 || c.pl.includes(pfIdx))
   ).sort((a,b)=>a.n.localeCompare(b.n));
 }
@@ -488,6 +599,7 @@ async function renderMonth(file){
   const cr = a.creator || {creator:0, other:0};
   bars($("chCreator"), [{label:"Creator-led", value:cr.creator||0},{label:"Other", value:cr.other||0}]);
   cxSetup(a);
+  renderReachMatrix(a);
 }
 
 async function renderCompare(){
@@ -577,7 +689,7 @@ document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () =>
 }));
 
 // channel-explorer filters + modal — any filter/search change resets to page 1
-["cxq","cxGenre","cxProvider","cxPlat"].forEach(id => $(id).addEventListener("input", () => { CX_PAGE = 1; cxRender(); }));
+["cxq","cxGenre","cxProvider","cxPlat","cxReach"].forEach(id => $(id).addEventListener("input", () => { CX_PAGE = 1; cxRender(); }));
 $("cxScrim").addEventListener("click", e => { if(e.target === $("cxScrim")) cxClose(); });
 document.addEventListener("keydown", e => { if(e.key === "Escape") cxClose(); });
 
