@@ -160,6 +160,58 @@
         padding:8px 11px;font-size:.76rem;margin:2px 0 12px;}
   @media(max-width:560px){.cx-grid{grid-template-columns:repeat(2,1fr);}}
   footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px;}
+
+  /* ── churn (gross adds / drops) ─────────────────────────────────────── */
+  .stat b.chadd{color:#1c5cab;}
+  .stat b.chdrop{color:#b53434;}
+  .chtable{width:100%;border-collapse:collapse;margin-top:6px;}
+  .chtable th{font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    text-align:right;font-weight:600;padding:0 8px 7px;border-bottom:1px solid #e2e8f0;}
+  .chtable th.pl{text-align:left;}
+  .chtable th.bfcol{text-align:center;}
+  .chtable td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;
+    text-align:right;font-size:.86rem;}
+  .chtable td.pl{text-align:left;font-weight:600;white-space:nowrap;}
+  .chtable tr.chrow{cursor:pointer;}
+  .chtable tr.chrow:hover td{background:#f8fafc;}
+  .chtable tr.chopen td{background:#f8fafc;border-bottom:none;}
+  .bfly{display:flex;align-items:center;height:16px;min-width:140px;}
+  .bfhalf{flex:1;display:flex;height:14px;align-items:center;}
+  .bfhalf.l{justify-content:flex-end;}
+  .bfbar{height:14px;}
+  .bfbar.add{background:var(--series);border-radius:0 4px 4px 0;}
+  .bfbar.drop{background:var(--down);border-radius:4px 0 0 4px;}
+  .bfaxis{width:1px;align-self:stretch;background:#cbd5e1;flex:none;}
+  td .chadd{color:#1c5cab;font-weight:700;}
+  td .chdrop{color:#b53434;font-weight:700;}
+  td .chflat{color:var(--muted);font-weight:400;}
+  .chrate{color:var(--muted);font-size:.76rem;font-weight:400;}
+  .chev{color:var(--muted);font-size:.7rem;}
+  tr.chacc td{background:#f8fafc;padding:2px 8px 12px;text-align:left;}
+  .chacc-in{border-left:2px solid #e2e8f0;margin-left:4px;padding:4px 0 0 12px;}
+  .chacc-h{font-size:.78rem;color:var(--muted);margin:7px 0 3px;}
+  .chline{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:.84rem;flex-wrap:wrap;}
+  .chdot{width:7px;height:7px;border-radius:2px;flex:none;}
+  .chdot.add{background:var(--series);}
+  .chdot.drop{background:var(--down);}
+  .chname{font-weight:600;min-width:150px;}
+  .chchip{font-size:.7rem;border:1px solid #e2e8f0;border-radius:999px;padding:1px 8px;
+    color:var(--muted);background:#fff;}
+  .chbadge{font-size:.7rem;border-radius:999px;padding:1px 8px;white-space:nowrap;}
+  .chbadge.exit{background:#f9e2e2;color:#8f2626;}
+  .chbadge.enter{background:#e2ecf9;color:#1c5cab;}
+  .chbadge.stay{background:#edf0ee;color:#4a5568;}
+  .chlegend{display:flex;gap:16px;font-size:.8rem;color:var(--muted);margin:2px 0 8px;flex-wrap:wrap;}
+  .chlg{display:flex;align-items:center;gap:6px;}
+  .chsw{width:10px;height:10px;border-radius:3px;}
+  .chfoot{color:var(--muted);font-size:.76rem;margin-top:8px;}
+  #chTimeline{overflow-x:auto;}
+  #chTimeline text{font:11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;fill:var(--muted);}
+  #chTimeline text.v{font-weight:700;}
+  #chTimeline text.va{fill:#1c5cab;}
+  #chTimeline text.vd{fill:#b53434;}
+  #chTimeline text.tl{fill:#334155;font-weight:600;}
+  @media(max-width:640px){.chtable .bfcol{display:none;}}
 </style>
 </head>
 <body>
@@ -602,6 +654,171 @@ async function renderMonth(file){
   renderReachMatrix(a);
 }
 
+
+// ── churn: gross adds / drops between two months ─────────────────────────
+function chIndex(m){
+  const agg = m.aggregates || {};
+  const pl = agg.platform_list || [];
+  const map = new Map();
+  (agg.channels || []).forEach(c => {
+    map.set(String(c.n).toLowerCase(),
+      {n:c.n, g:c.g||"", pv:(c.pv||[]), plats:new Set((c.pl||[]).map(i=>pl[i]))});
+  });
+  return map;
+}
+const chEsc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+
+function computeChurn(ma, mb){
+  const A = chIndex(ma), B = chIndex(mb);
+  const added = [], dropped = [];
+  B.forEach((v,k)=>{ if(!A.has(k)) added.push(v); });
+  A.forEach((v,k)=>{ if(!B.has(k)) dropped.push(v); });
+  const plats = [...new Set([...((ma.aggregates||{}).platform_list||[]),
+                             ...((mb.aggregates||{}).platform_list||[])])].sort();
+  const rows = plats.map(p => {
+    const add = [], drop = [];
+    B.forEach((v,k)=>{
+      if(v.plats.has(p) && !(A.has(k) && A.get(k).plats.has(p)))
+        add.push({n:v.n, g:v.g, pv:v.pv, was:A.has(k)});
+    });
+    A.forEach((v,k)=>{
+      if(v.plats.has(p) && !(B.has(k) && B.get(k).plats.has(p)))
+        drop.push({n:v.n, g:v.g, pv:v.pv,
+                   still: B.has(k) ? [...B.get(k).plats] : null});
+    });
+    let base = 0; A.forEach(v => { if(v.plats.has(p)) base++; });
+    const byName = (x,y)=>x.n.localeCompare(y.n);
+    return {p, add:add.sort(byName), drop:drop.sort(byName), base};
+  });
+  return {added, dropped, rows, baseTotal:A.size};
+}
+
+function chAccList(items, kind, p){
+  return items.map(it => {
+    let badge;
+    if(kind === "add")
+      badge = it.was ? '<span class="chbadge stay">↗ from other platforms</span>'
+                     : '<span class="chbadge enter">● new to market</span>';
+    else if(it.still === null)
+      badge = '<span class="chbadge exit">⏏ exited market</span>';
+    else {
+      const others = it.still.filter(x=>x!==p);
+      const shown = others.slice(0,2).map(chEsc).join(", ");
+      const more = others.length>2 ? " +"+(others.length-2) : "";
+      badge = '<span class="chbadge stay">→ still on '+(shown+more || "?")+'</span>';
+    }
+    const pv = (it.pv||[]).filter(x=>x&&x!=="Unknown").slice(0,1).map(chEsc).join("");
+    return '<div class="chline"><span class="chdot '+kind+'"></span>'
+         + '<span class="chname">'+chEsc(it.n)+'</span>'
+         + (it.g ? '<span class="chchip">'+chEsc(it.g)+'</span>' : "")
+         + (pv ? '<span class="chchip">'+pv+'</span>' : "")
+         + badge + '</div>';
+  }).join("");
+}
+
+function churnPlatformSection(CH, la, lb){
+  const rows = [...CH.rows].sort((x,y)=>(y.add.length+y.drop.length)-(x.add.length+x.drop.length)
+                                        || (y.add.length-y.drop.length)-(x.add.length-x.drop.length));
+  const maxV = Math.max(1, ...rows.map(r=>Math.max(r.add.length, r.drop.length)));
+  let out = '<div class="chart"><h3>By platform — unique channels added &amp; dropped</h3>'
+          + '<div class="chlegend"><span class="chlg"><span class="chsw" style="background:var(--series)"></span>added</span>'
+          + '<span class="chlg"><span class="chsw" style="background:var(--down)"></span>dropped</span>'
+          + '<span class="chlg">click a row for the channel names</span></div>'
+          + '<table class="chtable"><thead><tr><th class="pl">Platform</th>'
+          + '<th class="bfcol">− dropped&nbsp;&nbsp;|&nbsp;&nbsp;added +</th>'
+          + '<th>Added</th><th>Dropped</th><th>Net</th><th>Churn</th><th style="width:18px"></th></tr></thead><tbody>';
+  rows.forEach((r,i)=>{
+    const a = r.add.length, d = r.drop.length, net = a - d;
+    const wA = a ? Math.max(3, Math.round(a/maxV*100)) : 0;
+    const wD = d ? Math.max(3, Math.round(d/maxV*100)) : 0;
+    const rate = r.base ? (d/r.base*100).toFixed(1)+"%" : "–";
+    const netHtml = net>0 ? '<span class="chadd">+'+nf(net)+'</span>'
+                  : net<0 ? '<span class="chdrop">−'+nf(-net)+'</span>'
+                  : '<span class="chflat">0</span>';
+    out += '<tr class="chrow" data-acc="chacc'+i+'" title="'+chEsc(r.p)+': click for channel names">'
+        + '<td class="pl">'+chEsc(r.p)+'</td>'
+        + '<td class="bfcol"><div class="bfly"><div class="bfhalf l">'
+        + (wD?'<div class="bfbar drop" style="width:'+wD+'%"></div>':'')
+        + '</div><div class="bfaxis"></div><div class="bfhalf">'
+        + (wA?'<div class="bfbar add" style="width:'+wA+'%"></div>':'')
+        + '</div></div></td>'
+        + '<td>'+(a?'<span class="chadd">+'+nf(a)+'</span>':'<span class="chflat">0</span>')+'</td>'
+        + '<td>'+(d?'<span class="chdrop">−'+nf(d)+'</span>':'<span class="chflat">0</span>')+'</td>'
+        + '<td>'+netHtml+'</td>'
+        + '<td class="chrate">'+rate+'</td>'
+        + '<td class="chev">▸</td></tr>';
+    let inner = "";
+    if(a) inner += '<div class="chacc-h"><b>+'+a+' added</b></div>' + chAccList(r.add, "add", r.p);
+    if(d) inner += '<div class="chacc-h"><b>−'+d+' dropped</b></div>' + chAccList(r.drop, "drop", r.p);
+    if(!inner) inner = '<div class="chacc-h">No channels added or dropped.</div>';
+    out += '<tr class="chacc" id="chacc'+i+'" hidden><td colspan="7"><div class="chacc-in">'+inner+'</div></td></tr>';
+  });
+  out += '</tbody></table>'
+      + '<div class="chfoot">Counts are unique channels per platform (the Status tab counts listings, which can differ). '
+      + 'Churn rate = dropped ÷ '+chEsc(la)+' base. Matching is by channel name, so a renamed channel counts as one drop + one add.</div></div>';
+  return out;
+}
+
+function chWire(body){
+  body.querySelectorAll("tr.chrow").forEach(tr => tr.addEventListener("click", () => {
+    const acc = body.querySelector("#"+tr.dataset.acc); if(!acc) return;
+    const open = !acc.hidden;
+    acc.hidden = open;
+    tr.classList.toggle("chopen", !open);
+    tr.querySelector(".chev").textContent = open ? "▸" : "▾";
+  }));
+}
+
+function churnTimelineShell(){
+  return '<div class="chart"><h3>Adds vs drops, month by month</h3>'
+       + '<div class="chlegend"><span class="chlg"><span class="chsw" style="background:var(--series)"></span>added</span>'
+       + '<span class="chlg"><span class="chsw" style="background:var(--down)"></span>dropped</span>'
+       + '<span class="chlg">unique channels, market level · net beneath each pair</span></div>'
+       + '<div id="chTimeline" style="color:var(--muted);font-size:.85rem">Computing…</div></div>';
+}
+
+async function renderChurnTimeline(body){
+  const el = body.querySelector("#chTimeline"); if(!el) return;
+  const ds = [...DATES].sort((a,b)=>(a.month<b.month?-1:1));
+  if(ds.length < 2){ el.textContent = "Needs at least two months of data."; return; }
+  try {
+    const ms = [];
+    for(const d of ds) ms.push(await load(d.file));
+    const trans = [];
+    for(let i=1;i<ms.length;i++){
+      const c = computeChurn(ms[i-1].manifest, ms[i].manifest);
+      trans.push({from:ds[i-1].label.slice(0,3), to:ds[i].label.slice(0,3),
+                  add:c.added.length, drop:c.dropped.length});
+    }
+    const maxV = Math.max(1, ...trans.map(t=>Math.max(t.add,t.drop)));
+    const gw = 130, x0 = 46, W = x0 + trans.length*gw + 10, H = 216, base = 104, span = 66, bw = 20;
+    const sc = v => v/maxV*span;
+    let svg = '<svg viewBox="0 0 '+W+' '+H+'" width="'+Math.min(W,560)+'" role="img" aria-label="Channels added and dropped per month transition">';
+    svg += '<line x1="'+x0+'" y1="'+(base-span-4)+'" x2="'+(W-6)+'" y2="'+(base-span-4)+'" stroke="var(--line)"/>';
+    svg += '<line x1="'+x0+'" y1="'+(base+span+4)+'" x2="'+(W-6)+'" y2="'+(base+span+4)+'" stroke="var(--line)"/>';
+    svg += '<line x1="'+x0+'" y1="'+base+'" x2="'+(W-6)+'" y2="'+base+'" stroke="#cbd5e1"/>';
+    svg += '<text x="'+(x0-6)+'" y="'+(base-span)+'" text-anchor="end">+'+maxV+'</text>';
+    svg += '<text x="'+(x0-6)+'" y="'+(base+4)+'" text-anchor="end">0</text>';
+    svg += '<text x="'+(x0-6)+'" y="'+(base+span+6)+'" text-anchor="end">−'+maxV+'</text>';
+    trans.forEach((t,i)=>{
+      const cx = x0 + i*gw + gw/2;
+      const ha = sc(t.add), hd = sc(t.drop);
+      const xa = cx - bw - 2, xd = cx + 2;
+      if(t.add) svg += '<rect x="'+xa+'" y="'+(base-ha)+'" width="'+bw+'" height="'+ha+'" rx="4" fill="var(--series)"/>'
+                     + '<rect x="'+xa+'" y="'+(base-Math.min(ha,4))+'" width="'+bw+'" height="'+Math.min(ha,4)+'" fill="var(--series)"/>';
+      if(t.drop) svg += '<rect x="'+xd+'" y="'+base+'" width="'+bw+'" height="'+hd+'" rx="4" fill="var(--down)"/>'
+                      + '<rect x="'+xd+'" y="'+base+'" width="'+bw+'" height="'+Math.min(hd,4)+'" fill="var(--down)"/>';
+      svg += '<text class="v va" x="'+(xa+bw/2)+'" y="'+(base-ha-5)+'" text-anchor="middle">+'+t.add+'</text>';
+      svg += '<text class="v vd" x="'+(xd+bw/2)+'" y="'+(base+hd+13)+'" text-anchor="middle">−'+t.drop+'</text>';
+      const net = t.add - t.drop;
+      svg += '<text class="tl" x="'+cx+'" y="'+(H-18)+'" text-anchor="middle">'+t.from+' → '+t.to+'</text>';
+      svg += '<text x="'+cx+'" y="'+(H-4)+'" text-anchor="middle">net '+(net>0?'+':'')+net+'</text>';
+    });
+    svg += '</svg>';
+    el.innerHTML = svg;
+  } catch(e){ el.textContent = "Could not compute the timeline."; }
+}
+
 async function renderCompare(){
   const fromF = $("cmpFrom").value, toF = $("cmpTo").value;
   const body = $("cmpBody");
@@ -615,6 +832,7 @@ async function renderCompare(){
   const ma = A.manifest, mb = B.manifest;
   const la = DATES.find(d=>d.file===fromF).label, lb = DATES.find(d=>d.file===toF).label;
   const aa = ma.aggregates||{}, ab = mb.aggregates||{};
+  const CH = computeChurn(ma, mb);
 
   const tiles = (label, x, y) => {
     const d = (y||0)-(x||0);
@@ -631,14 +849,20 @@ async function renderCompare(){
     tileHtml += tiles("national channels", aa.unique_national, ab.unique_national)
               + tiles("local city feeds", aa.unique_local, ab.unique_local);
   }
+  tileHtml += `<div class="stat"><b class="chadd">+${nf(CH.added.length)}</b><span>channels added</span></div>`
+           + `<div class="stat"><b class="chdrop">−${nf(CH.dropped.length)}</b><span>channels dropped</span></div>`
+           + `<div class="stat" title="dropped channels ÷ ${la} unique-channel base"><b>${CH.baseTotal ? (CH.dropped.length/CH.baseTotal*100).toFixed(1) : "0.0"}%</b><span>churn rate</span></div>`;
   html += `<div class="stats">${tileHtml}</div>`;
   const crLabel = o => ({"Creator-led":(o&&o.creator)||0, "Other":(o&&o.other)||0});
-  html += deltaSection("By platform", aa.by_platform, ab.by_platform);
+  html += churnPlatformSection(CH, la, lb);
   html += deltaSection("By genre (unique channels)", aa.by_amagi_genre || aa.by_genre, ab.by_amagi_genre || ab.by_genre);
   html += deltaSection("By tech provider (deliveries)", aa.by_provider, ab.by_provider);
   html += deltaSection("By language (unique channels)", aa.by_language, ab.by_language);
   html += deltaSection("Creator channels (unique)", crLabel(aa.creator), crLabel(ab.creator));
+  html += churnTimelineShell();
   body.innerHTML = html;
+  chWire(body);
+  renderChurnTimeline(body);
 }
 
 function deltaSection(title, a, b){
