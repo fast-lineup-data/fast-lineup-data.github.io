@@ -287,7 +287,7 @@
           </div>
           <div class="rmx-scroll"><table class="rmx" id="reachMatrix"></table></div>
         </div>
-        <div class="chart"><h3>Deliveries by tech provider</h3><div class="sub">Counted per channel–platform delivery (not unique channels) · Amagi feed IDs + LG providerId · “Unknown” where no source identifies it</div><div class="bars" id="chProvider"></div></div>
+        <div class="chart" hidden><h3>Deliveries by tech provider</h3><div class="sub">Counted per channel–platform delivery (not unique channels) · Amagi feed IDs + LG providerId · “Unknown” where no source identifies it</div><div class="bars" id="chProvider"></div></div>
         <div class="chart"><h3>Unique channels by language</h3><div class="sub">Detected from platform data + channel names</div><div class="bars" id="chLang"></div></div>
         <div class="chart"><h3>Creator channels</h3><div class="sub">Digital-native / creator-led channels (beta — improving each month)</div><div class="bars" id="chCreator"></div></div>
       </div>
@@ -299,7 +299,7 @@
         <div class="cx-controls">
           <input type="text" id="cxq" placeholder="Search channel name…">
           <select id="cxGenre"><option value="">All genres</option></select>
-          <select id="cxProvider"><option value="">All providers</option></select>
+          <select id="cxProvider" hidden><option value="">All providers</option></select>
           <select id="cxPlat"><option value="">Any platform</option></select>
           <select id="cxReach"><option value="">Any # platforms</option></select>
           <span class="stamp" id="cxCount" style="margin-left:auto"></span>
@@ -307,7 +307,7 @@
         <div class="cx-tablewrap">
           <table class="cx-table">
             <thead><tr>
-              <th>Channel</th><th>Genre</th><th>Provider</th><th>Lang</th>
+              <th>Channel</th><th>Genre</th><th>Lang</th>
               <th title="Number of platforms carried on"># on</th>
               <th>On</th><th>Not on</th>
             </tr></thead>
@@ -315,7 +315,7 @@
           </table>
         </div>
         <div class="cx-pager" id="cxPager"></div>
-        <div class="cx-hint">Showing 20 channels per page — search and filters apply across the whole catalogue. Click any channel to see its provider <b>per platform</b>. The <b>Provider</b> column lists the distinct providers across a channel’s platforms (a channel can be delivered by different providers on different platforms); “Unknown” means no source identifies that delivery.</div>
+        <div class="cx-hint">Showing 20 channels per page — search and filters apply across the whole catalogue. Click any channel to see which platforms carry it.</div>
       </div>
     </div>
 
@@ -563,13 +563,12 @@ function cxRender(){
     return `<tr data-n="${esc(c.n)}">
       <td class="cx-name">${esc(c.n)}</td>
       <td><span class="gbadge">${esc(c.g)}</span></td>
-      <td><div class="chips">${distinctProv(c.pv).map(provPill).join("")}</div></td>
       <td class="muted">${esc(c.l)}</td>
       <td class="num">${on.length}</td>
       <td><div class="chips">${on.map(p=>cxchip(p,true)).join("")}</div></td>
       <td><div class="chips">${off.length?off.map(p=>cxchip(p,false)).join(""):'<span class="muted">—</span>'}</div></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="7" class="cx-more">No channels match your filters.</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="cx-more">No channels match your filters.</td></tr>`;
   body.querySelectorAll("tr[data-n]").forEach(tr => tr.onclick = () => cxDetail(tr.dataset.n));
   cxPager(pages);
 }
@@ -603,16 +602,14 @@ function cxDetail(name){
   c.pl.forEach((idx,k) => pmap[idx] = (c.pv||[])[k] || "Unknown");
   const grid = CXPLATS.map((p,idx)=>{
     const on = idx in pmap;
-    const st = on ? esc(pmap[idx]) : "Not on";      // On cells show WHO delivers it
+    const st = on ? "\u2713 On" : "Not on";
     return `<div class="pcell ${on?'on':'off'}"><span class="dot"></span><span class="pn">${esc(p)}</span><span class="st">${st}</span></div>`;
   }).join("");
   $("cxModal").innerHTML =
     `<div class="cx-dhead"><h3>${esc(c.n)}</h3><span class="gbadge">${esc(c.g)}</span>`
-    + `<div class="chips">${distinctProv(c.pv).map(provPill).join("")}</div>`
     + `<button class="cx-x" onclick="cxClose()" aria-label="Close">✕</button></div>`
     + `<div class="cx-kv"><span>Sub-genre <b>${esc(c.s)}</b></span><span>Language <b>${esc(c.l)}</b></span>`
     + `<span>On <b>${c.pl.length} of ${CXPLATS.length}</b> platforms</span></div>`
-    + `<div class="cx-note">Provider shown per platform below — the same channel can be delivered by different providers on different platforms.</div>`
     + `<div class="cx-grid">${grid}</div>`;
   $("cxScrim").classList.add("on");
 }
@@ -707,11 +704,9 @@ function chAccList(items, kind, p){
       const more = others.length>2 ? " +"+(others.length-2) : "";
       badge = '<span class="chbadge stay">→ still on '+(shown+more || "?")+'</span>';
     }
-    const pv = (it.pv||[]).filter(x=>x&&x!=="Unknown").slice(0,1).map(chEsc).join("");
     return '<div class="chline"><span class="chdot '+kind+'"></span>'
          + '<span class="chname">'+chEsc(it.n)+'</span>'
          + (it.g ? '<span class="chchip">'+chEsc(it.g)+'</span>' : "")
-         + (pv ? '<span class="chchip">'+pv+'</span>' : "")
          + badge + '</div>';
   }).join("");
 }
@@ -856,7 +851,6 @@ async function renderCompare(){
   const crLabel = o => ({"Creator-led":(o&&o.creator)||0, "Other":(o&&o.other)||0});
   html += churnPlatformSection(CH, la, lb);
   html += deltaSection("By genre (unique channels)", aa.by_amagi_genre || aa.by_genre, ab.by_amagi_genre || ab.by_genre);
-  html += deltaSection("By tech provider (deliveries)", aa.by_provider, ab.by_provider);
   html += deltaSection("By language (unique channels)", aa.by_language, ab.by_language);
   html += deltaSection("Creator channels (unique)", crLabel(aa.creator), crLabel(ab.creator));
   html += churnTimelineShell();
